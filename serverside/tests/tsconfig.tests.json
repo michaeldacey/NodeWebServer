@@ -1,0 +1,14 @@
+{
+  "extends": "../../configs/tscompileoptions.json",
+  "compilerOptions": {
+	"module": "commonjs",
+	"sourceMap": true,
+	"outDir": "./js"
+  },
+  "include": [
+    "./**/*"
+  ],
+  "exclude": [
+    "./js"
+  ]
+}

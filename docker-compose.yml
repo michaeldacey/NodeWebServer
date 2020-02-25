@@ -1,0 +1,35 @@
+version: "3.6"
+services:
+  webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: node-webserver
+    restart: always
+    ports: 
+      - "1339:1339"
+      - "22:22"
+    networks: 
+      - dbnetwork
+    volumes:
+      - ./:/var/www/node
+  postgres:
+    image: postgres:latest
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: "docker"
+      POSTGRES_PASSWORD: "password"
+      POSTGRES_DB: "mydb"
+    networks: 
+      - dbnetwork
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"    
+    networks: 
+      - dbnetwork
+networks:
+    dbnetwork:

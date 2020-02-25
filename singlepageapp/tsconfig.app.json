@@ -1,0 +1,10 @@
+{
+  "extends": "../configs/tscompileoptions.json",
+  "compilerOptions": {
+	"sourceMap": true,
+    "outDir": "./dist" 
+  },
+  "include": [
+    "./**/*"
+  ]
+}
