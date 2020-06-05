@@ -6,15 +6,14 @@
   "scripts": {
     "server:build:source": "./node_modules/.bin/tsc -p ./serverside/tsconfig.server.json",
     "server:build:tests": "./node_modules/.bin/tsc -p ./serverside/tests/tsconfig.tests.json",
-	"server:build": "./node_modules/.bin/run-s server:build:source server:build:tests",
+    "server:build": "./node_modules/.bin/run-s server:build:source server:build:tests",
     "client:build": "./node_modules/.bin/tsc -p ./clientside/tsconfig.client.json",
     "app:build": "npx webpack -verbose --config ./configs/webpack.config.js",
     "server:start:tests": "./node_modules/.bin/mocha ./serverside/tests/js/**/*.test.js",
     "server:start:tests:watch": "./node_modules/.bin/nodemon --watch ./serverside/tests --ext test.js --exec npm run server:start:tests",
     "autorun": "node ./serverside/dist/ts/server.js",
-
-	"build": "./node_modules/.bin/nodemon --ext ts,tsx --exec run-s server:build:source server:build:tests server:start:tests client:build app:build",
-	"start": "./node_modules/.bin/nodemon --ext ts,tsx --exec run-s server:build:source server:build:tests server:start:tests client:build app:build autorun"
+    "build": "./node_modules/.bin/nodemon --ext ts,tsx --exec run-s server:build:source server:build:tests server:start:tests client:build app:build",
+    "start": "./node_modules/.bin/nodemon --ext ts,tsx --exec run-s server:build:source server:build:tests server:start:tests client:build app:build autorun"
   },
   "author": "Mike Dacey",
   "license": "ISC",
@@ -39,7 +38,9 @@
     "workbox-webpack-plugin": "^3.6.3"
   },
   "dependencies": {
+    "@types/md5": "^2.2.0",
     "formidable": "^1.2.1",
-    "jquery": "^3.4.1"
+    "jquery": "^3.4.1",
+    "md5": "^2.2.1"
   }
 }

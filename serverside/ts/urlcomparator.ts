@@ -38,7 +38,7 @@ export class UrlComparator
 					args[fieldParts[0]] = this.CastFieldType(fieldParts[1], fieldValue);
 					if(Object.is(args[fieldParts[0]], NaN))
 					{
-						console.log("No match, isNan " + args[fieldParts[0]]);
+						console.log("Value does not match type required type:" + fieldParts[1]);
 						return false;
 					}
 				}

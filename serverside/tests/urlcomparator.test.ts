@@ -40,7 +40,7 @@ describe('Given a UrlComparator with a simple route /home/hello', () => {
 		it('then it should return false and fail to match the route', () => {			
 			let args: KeyValuePairs = [];
 			let expected: boolean = false;
-			let actual: boolean = testObj.CompareRouteUrl(url, route, args);
+			let actual: boolean = testObj.CompareRouteUrl(url, route, (key:string, value:any) => args[key] = value);
 
 			assert.equal(actual, expected);
 		});				

@@ -42,6 +42,12 @@ import {
 } from './keyvaluepairs';
 
 import {
+	JsonPatch,
+	PatchOperation,
+	IJsonPatchDocOp
+} from './jsonpatch';
+
+import {
 	Router,
 	RouteCallback,
 	Route
@@ -151,6 +157,7 @@ export class WebServer
 		{
 			let urlPath: string = requestedUrl.pathname!;
 			let method: string = request.method!.toLowerCase();
+			let content_type: string = this.ExtractMediaType(request.headers['content-type']);
 			
 			// All the values provided in the HTTP Request from
 			// the component parts of the URI, the URL args and 
@@ -158,7 +165,22 @@ export class WebServer
 			// and placed in this "args" array to be passed
 			// the users callback for the route they added.
 			let args: KeyValuePairs = [];
-						
+			
+			// NOTE: Request Headers are case insenstive (RFC2616 HTTP)
+			// The node.js request converts all headers
+			// to lower case.
+			
+			args['content-type'] = content_type;
+			
+			// HTTP Conditional Request Headers (RFC2616 HTTP)
+			if(typeof request.headers['if-match'] !== 'undefined') args['if-match'] = request.headers['if-match']; 
+			if(typeof request.headers['if-none-match'] !== 'undefined') args['if-none-match'] = request.headers['if-none-match']; 
+			if(typeof request.headers['if-modified-since'] !== 'undefined') args['if-modified-since'] = request.headers['if-modified-since']; 
+			if(typeof request.headers['if-unmodified-since'] !== 'undefined') args['if-unmodified-since'] = request.headers['if-unmodified-since']; 
+			if(typeof request.headers['if-range'] !== 'undefined') args['if-range'] = request.headers['if-range']; 
+							
+			//console.log("HEADERS received %o", request.headers);
+							
 			if(method == "get")
 			{
 				this.ReadUrlArgs(requestedUrl.query!, args);
@@ -169,8 +191,8 @@ export class WebServer
 			}
 			else if(method == "post")
 			{
-				console.log("handling post:"+request.headers['content-type']);
-				switch(request.headers['content-type'])
+				console.log("handling post:"+content_type);
+				switch(content_type)
 				{
 					case 'multipart/form-data':
 						// The content type “application/x-www-form-urlencoded” 
@@ -179,6 +201,7 @@ export class WebServer
 						// The content type “multipart/form-data” should be used for
 						// submitting forms that contain files, non-ASCII data, 
 						// and binary data
+						console.log("Processing multipart upload");
 						this.ProcessMultipartUpload(request, (err: Error|null, details: UploadDetails) => {
 							if(err===null)
 							{
@@ -229,8 +252,8 @@ export class WebServer
 			}
 			else if(method == "put")
 			{
-				console.log("handling put:"+request.headers['content-type']);
-				switch(request.headers['content-type'])
+				console.log("handling put:"+content_type);
+				switch(content_type)
 				{
 					case 'application/json':
 						this.ProcessPostedBodyArgs(request, (body:string, success: boolean)=> {
@@ -257,8 +280,8 @@ export class WebServer
 			}
 			else if(method == "delete")
 			{
-				console.log("handling delete:"+request.headers['content-type']);
-				switch(request.headers['content-type'])
+				console.log("handling delete:"+content_type);
+				switch(content_type)
 				{
 					case 'application/json':
 						this.ProcessRequest(urlPath, method, response, args);
@@ -269,10 +292,135 @@ export class WebServer
 						request.connection.destroy();
 						break;
 				}									
-			}			
-			
+			}
+			else if(method == "patch")
+			{	
+				// RFC5789 introduces patching		
+				// The PATCH method requests that a set of changes described in the
+				// request entity be applied to the resource identified by the 
+				// Request URI.
+				
+				// NOTE: RFC5789 outlines a problem with PATCH
+				// A PATCH request can be issued in such a way as
+				// to be idempotent, which also helps prevent bad outcomes
+				// from collisions between two PATCH requests on the same
+				// resource in a similar time frame. 
+				// Collisions from multiple PATCH requests may be more
+				// dangerous than PUT collisions because some patch formats
+				// need to operate from a known base-point or else they will
+				// corrupt the resource (Non-idempotent).  Clients using this
+				// kind of patch application SHOULD use a HTTP conditional 
+				// request (headers defined in RFC2616 HTTP) such that the request 
+				// will fail if the resource has been updated since the 
+				// client last accessed the resource.
+				//
+				// HTTP Conditional Request Headers (RFC2616)
+				// Enitity Tags (ETag): 
+				// Common methods of ETag generation include using a 
+				// collision-resistant hash function of the resource's content,
+				// a hash of the last modification timestamp, or even just 
+				// a revision number. 
+				// https://developer.mozilla.org/en-US/docs/Web/HTTP/Conditional_requests
+				// If-Match :
+				// The If-Match request-header field is used with a method to 
+				// make it conditional. A client that has one or more entities 
+				// previously
+				// obtained from the resource can verify that one of those
+				// entities is current by including a list of their associated 
+				// entity tags in the If-Match header field. ..... to prevent 
+				// inadvertent modification of the wrong version of a resource.
+				
+				console.log("handling patch:"+content_type);
+				switch(content_type)
+				{
+					case 'application/json':
+						this.ProcessPostedBodyArgs(request, (body:string, success: boolean)=> {
+							if(success)
+							{
+								(new DebugHelper()).DumpObject(JSON.parse(body), "JSON patch received = ");
+								this.ReadPostPatchArgs(JSON.parse(body), args);
+								this.ProcessRequest(urlPath, method, response, args);	
+							}
+							else
+							{
+								response.writeHead(413, {'Content-Type':'text/plain; charset=utf-8'});
+								response.end();
+								request.connection.destroy();
+							}
+						});
+						break;
+					case 'application/json-patch+json':  // RFC6902
+						// RFC5789 introduces patching
+						// Note: There is no single default patch document format that implementations
+						// are required to support.
+						// RFC6902 describes a JSON Patch Document format
+						this.ProcessPostedBodyArgs(request, (body:string, success: boolean)=> {
+							if(success)
+							{
+								(new DebugHelper()).DumpObject(JSON.parse(body), "JSON patch received = ");
+								if(this.ReadPostJsonPatchDoc(JSON.parse(body), args) == true)
+								{
+									this.ProcessRequest(urlPath, method, response, args);
+								}								
+							}
+							else
+							{
+								response.writeHead(413, {'Content-Type':'text/plain; charset=utf-8'});
+								response.end();
+								request.connection.destroy();
+							}
+						});			
+						break;
+					case 'application/merge-patch+json':  // RFC7396
+						// A JSON merge patch document describes changes
+						// to be made to a target JSON document using a
+						// syntax that closely mimics the document being
+						// modified.  Recipients of a merge patch document
+						// determine the exact set of changes being requested
+						// by comparing the content of the provided patch
+						// against the current content of the target document.
+						this.ProcessPostedBodyArgs(request, (body:string, success: boolean)=> {
+							if(success)
+							{
+								(new DebugHelper()).DumpObject(JSON.parse(body), "JSON patch received = ");
+								this.ReadPostJsonMergePatch(JSON.parse(body), args);
+								this.ProcessRequest(urlPath, method, response, args);	
+							}
+							else
+							{
+								response.writeHead(413, {'Content-Type':'text/plain; charset=utf-8'});
+								response.end();
+								request.connection.destroy();
+							}
+						});	
+						break;
+					default:
+						response.writeHead(400, {'Content-Type':'text/plain; charset=utf-8'});
+						response.end("Content-Type not supported");
+						request.connection.destroy();
+						break;
+				}									
+			}						
+		}	
+	}
+	
+	// The content-type header provides the media type.
+	// However, this may also be followed by the charset
+	// or boundary directives which we do not need
+	// to determine the content received.
+	private ExtractMediaType(content_type: any): string
+	{
+		// The content-type header starts with the media type
+		// but additional elements may follow it.
+		if(content_type !== undefined)
+		{
+			// Extract the start of the content-type
+			let parts: string[] = content_type.split(';');
+			if(parts.length > 0) return parts[0].trim().toLowerCase();
 		}
-		
+
+		// Failed to retrieve the media type
+		return "undefined";
 	}
 	
 	// Read the arguments appended to the end of the Url
@@ -317,11 +465,188 @@ export class WebServer
 		});
 	}
 	
+	// Assume all posted values are patch updates
+	// to existing fields.
+	// This is not really covered by any standard
+	// but it is a pragmatic approach that is often
+	// adopted for patching.
+	private ReadPostPatchArgs(bodyArgs: any, args: KeyValuePairs): void
+	{
+		Object.keys(bodyArgs).forEach((key:string) => {
+			args[key] = bodyArgs[key];
+			console.log("Route body patch update arg " + key + "=" + args[key]);
+		});
+	}
+	
+	// Handle RFC6902 JSON Patch Document
+	private ReadPostJsonPatchDoc(bodyArgs: any, args: KeyValuePairs): boolean
+	{
+		let actions: JsonPatch[] = [];
+		
+		// A JSON Patch Document is an array of objects
+		// containing the fields "op", "path" and "value"
+		// where "op" represents the required operation.
+		// Its value MUST be one of "add", "remove", "replace", 
+		// "move", "copy", or "test"; other values are errors.
+		// Operations are applied sequentially in the order
+		// they appear in the array.		
+		// "path" represents the resource to be modified. RFC6902 
+		// assumes we are writing to a JSON document, so it refers
+		// to the location IN the target document. Hence, path = "/" 
+		// means replace the entire document and path = "/a" means
+		// add an attribute "a" to the document e.g.
+		// { op = "add", path = "/a" value = 10}
+		// results in the target document { a: 10 }
+		// whereas { op = "add", path = "/a/b" value = 10}
+		// gives { a: { b: 10 } } assuming "a" already exists
+		// Numbers can be used for indexing into an array (a negative
+		// number is an index from the end of the array).
+		// Note: if a document/attribute already exists the "add"
+		// behaves like an "update" and replaces the current value.
+		// Each entry MUST have exactly one "path", so each operation 
+		// changes just one thing at a time.
+		// Note: Since we are processing the "path" ourselves, we
+		// are free to interpret this anyway we wish, so we could
+		// restrict the legal operations to "replace" and use a
+		// database.
+		// If required, the "value" represents the new value required.
+		// If required, "from" represents the location of the target
+		// to be moved or copied.
+
+		console.log("Process JSON Patch Document %o", bodyArgs);
+		for(let i in bodyArgs)
+		{
+			let action: IJsonPatchDocOp = bodyArgs[i];
+			let success: boolean = true;
+			
+			switch(action.op)
+			{
+				case "add":
+					// Requires a "value"
+					// If target location does not exist, just create it provided
+					// location we are creating it in already exists.
+					if(typeof action.value !== 'undefined')
+					{
+						actions.push(new JsonPatch(action.path, PatchOperation.PATCH_CREATE, action.value));
+						success = true;
+					}
+					break;
+				case "remove":
+					// No "value" required
+					// Target location "path" must exist for this operation
+					// to succeed					
+					actions.push(new JsonPatch(action.path, PatchOperation.PATCH_REMOVE, undefined));
+					break;
+				case "replace":
+					// Requires a "value"
+					// Target location "path" must exist for this operation
+					// to succeed
+					if(typeof action.value !== 'undefined')
+					{
+						actions.push(new JsonPatch(action.path, PatchOperation.PATCH_UPDATE, action.value));
+						success = true;
+					}
+					break;
+				case "move":
+					// "from" must exist for this operation
+					// to succeed
+					if(typeof action.from !== 'undefined')
+					{
+						actions.push(new JsonPatch(action.path, PatchOperation.PATCH_MOVE, action.from));
+					}
+					break;
+				case "copy":
+					// "from" must exist for this operation
+					// to succeed
+					if(typeof action.from !== 'undefined')
+					{
+						actions.push(new JsonPatch(action.path, PatchOperation.PATCH_COPY, action.from));
+					}
+					break;
+				case "test":
+					// Requires a "value"
+					// The "test" operation tests that a value at the 
+					// target location is equal to a specified value
+					if(typeof action.value !== 'undefined')
+					{
+						actions.push(new JsonPatch(action.path, PatchOperation.PATCH_TEST, action.value));
+						success = true;
+					}
+					break;
+				default:
+					console.log("Error: For field %s, unknown patch operation requested %s", action.path, action.op);
+					break;
+			}
+			
+			if(!success)
+			{
+				console.log("JSON Patch Doc Error %o", action);
+				return false;
+			}
+		}
+		
+		// Returning true here just means we have been
+		// given enough values.
+		args['patch-actions'] = actions;
+		return true;
+	}
+	
+	// Handle RFC7396 JSON Merge Patch
+	private ReadPostJsonMergePatch(bodyArgs: any, args: KeyValuePairs): void
+	{
+		// If the provided merge patch contains members that
+		// do not appear within the target, those members are added.
+		// If the target does contain the member, the value is
+		// replaced.  Null values in the merge patch are given
+		// special meaning to indicate the removal of existing
+		// values in the target.
+		
+		// At this point we cannot identify whether the field is
+		// is new and should be added or exists and should be updated.
+		// Therefore, we will just use "add" which will do both.
+		// Hence, all we can do is identify a value of null and
+		// turn it into a delete.
+		let actions: JsonPatch[] = [];
+		console.log("Process JSON Merge Patch %o", bodyArgs);
+		this.MergePatch("/", bodyArgs, actions);  // Recursive method
+		args['patch-actions'] = actions;
+		console.log("Merge actions %o", args['patch-actions']);
+	}
+	
+	// We will steal the idea of actions from the JSON Patch
+    // approach and convert the merge document into a series
+	// of operations.
+	private MergePatch(path: string, value: any, actions: JsonPatch[]): any
+	{
+		if(typeof value === 'object')
+		{
+			// Read all the fields in this object
+			Object.keys(value).forEach((key:string) => {
+				let fieldPath: string = path + key;
+				let action: JsonPatch;
+				if(value[key] != null)
+				{
+					action = this.MergePatch(fieldPath, value[key], actions);
+				}
+				else
+				{
+					action = new JsonPatch(fieldPath, PatchOperation.PATCH_REMOVE, undefined);
+				}
+				actions.push(action);
+			});
+		}
+		else
+		{
+			return new JsonPatch(path, PatchOperation.PATCH_MERGE, value);
+		}
+	}
+	
 	// Data can also be loaded using a multipart format.
 	private ProcessMultipartUpload(request:IncomingMessage, callback:(err: Error|null, details: UploadDetails) => void): void
 	{
 		const form: IncomingForm  = new IncomingForm();
 		
+		form.multiples = true;
 		form.uploadDir = this._uploadDir;
 		form.encoding = this._uploadEncoding;
 		form.keepExtensions = true;		// Keep file extensions
@@ -378,7 +703,7 @@ export class WebServer
 	// Process the HTTP Request
 	// Find the matching route or the router will
 	// just give us the default one.
-	private ProcessRequest(url: string, method: string, response:ServerResponse, data: any): void
+	private ProcessRequest(url: string, method: string, response:ServerResponse, data: KeyValuePairs): void
 	{
 		let route: Route = this._router.FindRoute(url, method, data);
 

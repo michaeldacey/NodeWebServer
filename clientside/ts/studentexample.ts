@@ -20,6 +20,7 @@ class StudentExamplePage
 		$("#read-student-button").click(this.LoadStudentClick);
 		$("#add-student-button").click(this.AddStudentClick);
 		$("#put-student-button").click(this.PutStudentClick);
+		$("#patch-student-button").click(this.PatchStudentClick);
 		$("#delete-student-button").click(this.DeleteStudentClick);
 	}
 	
@@ -150,8 +151,92 @@ class StudentExamplePage
 		e.preventDefault();
 		return false;
 	};
-	
+		
 	private StudentEditPut = (json: any, status: string, req: JQueryXHR): void =>
+	{
+		if(json.done === true)
+		{
+			$("#student-opstatus-span").html("Student edited (put) at index "+json.studentid);
+		}		
+	};
+	
+	private PatchStudentClick = (e: JQuery.Event): boolean => 
+	{
+		let enteredName: string = $("#student-name-text-box").val() as string;
+		let enteredAge: number = parseInt($("#student-age-text-box").val() as string);
+		let enteredCourse: string = $("#student-course-text-box").val() as string;
+		let studentid: number = parseInt($("#studentid-text-box").val() as string);
+		let contenttype: string;
+		let studentChanges: any = {};
+			
+		switch($( "#patch-mode option:selected" ).text())
+		{
+			case "jsonpatch":
+				contenttype = "application/json-patch+json";
+				studentChanges = [];
+				// Operations are executed in the order they are pushed,
+				// which make little difference in this example.
+				studentChanges.push(this.StudentPatchReplaceOp(studentid, "name", enteredName));
+				studentChanges.push(this.StudentPatchReplaceOp(studentid, "age", enteredAge));
+				studentChanges.push(this.StudentPatchReplaceOp(studentid, "course", enteredCourse));			
+				break;
+			case "jsonmerge":
+				contenttype = "application/merge-patch+json";
+				studentChanges = {
+					name: enteredName,
+					age: enteredAge,
+					course: enteredCourse
+				};
+				break;
+			case "json":
+			default:
+				contenttype = "application/json";
+				studentChanges = {
+					name: enteredName,
+					age: enteredAge,
+					course: enteredCourse
+				};
+				break;			
+		}
+	
+		$.ajax({
+			cache: false,
+			type: "PATCH",
+			url: "http://localhost:1339/students/patch/"+studentid,
+			data: JSON.stringify(studentChanges),
+			contentType: contenttype,
+			dataType: "json",
+			success: this.StudentEditPatch,
+			error: this.AjaxError
+		});
+
+		e.preventDefault();
+		return false;
+	};
+	
+	// Patch operation to replace a stored value
+	private StudentPatchReplaceOp(studentid: number, fieldname: string, newvalue: any): any
+	{
+		let jsonPointer: string; // Should point to JSON document fragment (field)
+		
+		// Remember the URI selects the students array element
+		// i.e. the resource to be modified.
+		// The JSON pointer selects the field within that resource
+		// that needs modifying. Strictly speaking, the resource
+		// being modified should be a JSON document.
+		// So "/" represents the selected resource which in our case
+		// represents the JS object selected by the studentid in the URI.
+		// https://erosb.github.io/post/json-patch-vs-merge-patch/
+		jsonPointer = "/" + fieldname;
+		
+		return {
+			op: "replace",
+			path: jsonPointer,
+			value: newvalue
+		};
+	}
+	
+	private StudentEditPatch = (json: any, status: string, req: JQueryXHR): void =>
 	{
 		if(json.done === true)
 		{

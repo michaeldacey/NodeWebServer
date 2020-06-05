@@ -17,7 +17,13 @@
 	<input id="student-age-text-box" type="text" value="Provide student age...." /><br/>
 	<input id="student-course-text-box" type="text" value="Provide student course...." /><br/>
 	<input id="add-student-button" type="button" value="Add Student Details" /><br/> 
-	<input id="put-student-button" type="button" value="Edit(Put) Student Details" /> 
+	<input id="put-student-button" type="button" value="Edit(Put) Student Details" /><br/> 
+	<select id="patch-mode">
+	<option value="Stanard JSON">json</option>
+	<option value="JSON Patch">jsonpatch</option>
+	<option value="JSON Merge">jsonmerge</option>
+	</select>
+	<input id="patch-student-button" type="button" value="Edit(Patch) Student Details" /> 
 	
 	<span id="student-opstatus-span">Waiting....</span>
 	</form>
