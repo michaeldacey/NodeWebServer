@@ -61,6 +61,12 @@ import {
 	DebugHelper
 } from './debughelper';
 
+// Options hash for webserver
+interface IWebServerOption
+{
+	cors_enable?: boolean
+}
+
 export class WebServer
 {
 	// Attributes
@@ -72,6 +78,7 @@ export class WebServer
 	private _pageControllersDir: string;
 	private _uploadDir: string;
 	private _uploadEncoding: string;
+	private _cors: boolean = false;
 
 	// Create a list of files the server supports by
 	// file extension e.g. ".js", and the related
@@ -109,7 +116,7 @@ export class WebServer
 	};
 	
 	// Constructor
-	constructor(hostname: string, port: number, router: Router, pageDir: string = "./clientside/html")
+	constructor(hostname: string, port: number, router: Router, pageDir: string = "./clientside/html", options?: IWebServerOption)
     {
 		this._hostname = hostname;
 		this._port = port;
@@ -125,6 +132,12 @@ export class WebServer
 		this._uploadEncoding = 'utf-8';
 		this._server = createServer(this.OnRequest);
 		this._router = router;
+		
+		// Check if any options have been provided
+		if(options)
+		{
+			if(options.cors_enable) this._cors = options.cors_enable;
+		}
 		
 		// For performance reasons, expand the file types
 		this.InflateFileTypes();
@@ -270,6 +283,20 @@ export class WebServer
 			if(typeof request.headers['if-range'] !== 'undefined') args['if-range'] = request.headers['if-range']; 
 							
 			//console.log("HEADERS received %o", request.headers);
+			
+			// If we are using cors then set headers for
+			// simple cors request
+			if(this._cors)
+			{
+				// We could check the "Origin" header in the HTTP Request to determine
+				// if the request is allowed.
+				// e.g. Access-Control-Allow-Origin: https://example.com
+				// Access-Control-Allow-Origin = Accept request for resources.
+				// Echo back the origin details from the request or * for a
+				// public resource
+				response.setHeader('Access-Control-Allow-Origin', '*');
+				//if (credentialsSupported == true) response.setHeader('Access-Control-Allow-Credentials', 'true');			
+			}
 							
 			if(method == "get")
 			{
@@ -490,7 +517,12 @@ export class WebServer
 						request.connection.destroy();
 						break;
 				}									
-			}						
+			}
+			else if(method == "options")
+			{
+				if(this._cors) this.CorsPreflightResponse(response);
+				response.end();
+			}	
 		}	
 	}
 	
@@ -544,6 +576,16 @@ export class WebServer
 		request.on('end', ()=> {
 			callback(body, true);
 		});			
+	}
+	
+	private CorsPreflightResponse(response:ServerResponse): void
+	{
+		//These headers are handling the "pre-flight" OPTIONS call sent by the browser
+		response.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, PUT');
+		response.setHeader('Access-Control-Allow-Headers', 'Authorization, Origin, Content-Type, Accept, X-Requested-With');
+
+		// Set Max-Age to 0 to allow us to see preflight check, should be something like 1728000 to cache the check response
+		response.setHeader('Access-Control-Max-Age', '0');    
 	}
 	
 	// https://community.arubanetworks.com/t5/Security/TUTORIAL-How-to-generate-TLS-certificates-for-Linux-using-the/td-p/149236
@@ -856,7 +898,7 @@ export class WebServer
 			else response.end((<Buffer>data).toString());
 		}).catch((error: Error):void => {
 			console.log(error.message);	
-			res.writeHead(400, {'Content-type':'text/html;charset=utf-8'})
+			response.writeHead(400, {'Content-type':'text/html;charset=utf-8'})
 			response.end("Image does not exist");
 		});	
 	}

@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="main.css"/>
+</head
+<body>
+	<p>Open this page from the browser directly</p>
+	<p>If you open it through localhost:1339 then you are not using CORS</p>
+	<form>
+	<span id="display-msg-span"></span>
+	<input id="read-msg-button" type="button" value="Read Message" /> 
+	</form>
+	
+	<script src="https://code.jquery.com/jquery-3.4.1.min.js"
+		integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+		crossorigin="anonymous"></script>
+	<script>
+	$(function() {
+		$("#read-msg-button").click(() => {
+			// This is not a simple request because
+			// we ask for JSON to be returned, soft
+			// a preflight request is made by the browser.
+			$.ajax({
+				cache: false,
+				type: "GET",
+				url: "http://localhost:1339/messages/read/1",
+				data: '{}',
+				contentType: "application/json",
+				dataType: "json",
+				success: (json, status, req) => {
+					$("#display-msg-span").html(json.msg);
+				},
+				error: (req, status, error) => {
+					window.alert("Error: " + error);
+				}
+			});
+			
+			e.preventDefault();		
+			return false;
+		});
+	});
+	</script>
+</body>
+</html>

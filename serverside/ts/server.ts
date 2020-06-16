@@ -51,7 +51,7 @@ class WebPageProcess
 	Start(): void
 	{
 		let router: Router = new Router();
-		let server: WebServer = new WebServer(this._hostname, this._port, router, "./clientside/html");
+		let server: WebServer = new WebServer(this._hostname, this._port, router, "./clientside/html", { cors_enable: true });
 		
 		//*******************************************************
 		// Quick test to display "Hi There"
