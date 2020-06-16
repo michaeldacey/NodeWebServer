@@ -77,21 +77,35 @@ export class WebServer
 	// file extension e.g. ".js", and the related
 	// HTTP content type that should be used when the
 	// file is returned to the browser.
-	// Are implementation is very crude because we
+	// Our implementation is very crude because we
 	// just serve the file "as is" instead of parsing
 	// it first which in the way you might expect if 
 	// you were requesting a ".php" file. You will need
 	// to add a route entry if you want to be this clever.
 	// Note for HTTP text types e.g. text\html, text\plain, etc.,
 	// specify the charset or the browser gets unhappy.
-	// Following the '#' is the virtual directory location
-	// of these files, this appended to the _pagesDir which
-	// represents the base directory where all content is placed.
-	private static _fileTypes: any = {
+	// Following the first '#' specify the virtual directory
+	// location of these files, this appended to the _pagesDir 
+	// which represents the base directory where all content 
+	// is placed. Include a second # to indicate whether the 
+	// file should be returned as text or binary (if not specified
+	// text is returned by default). 
+	// Note:[] allow you to map extensions to content types
+	// within one line ".png,.jpg":"image/[png,jpg]#../images#bin"
+	// becomes
+	// ".png":"image/png#../images#bin"
+	// ".jpg":"image/jpg#../images#bin"
+	// Also
+	// ".xxx, .yyy":"[video/xxxx,audio/yyy]#../media#bin"
+	// becomes
+	// ".xxx":"video/xxxx#../media#bin"
+	// ".yyy":"audio/yyy#../media#bin"	
+	private _fileTypes: any = {
 		".htm":"text/html; charset=utf-8#./",
 		".html":"text/html; charset=utf-8#./",
 		".js":"application/javascript#../dist",
-		".css":"text/css#../css"
+		".css":"text/css#../css",
+		".png,.jpg,.gif,.bmp":"image/[png,jpg,gif,bmp]#../images#bin"
 	};
 	
 	// Constructor
@@ -111,6 +125,11 @@ export class WebServer
 		this._uploadEncoding = 'utf-8';
 		this._server = createServer(this.OnRequest);
 		this._router = router;
+		
+		// For performance reasons, expand the file types
+		this.InflateFileTypes();
+		console.log(this._fileTypes);
+		
 		this.InitDefaultRoute();
     }
 	
@@ -125,6 +144,77 @@ export class WebServer
 	set UploadEncoding(value: string) { this._uploadEncoding; }
 	
 	// Methods
+	
+	// Any comma separated file type fields will be
+	// expanded to one entry per a file type listed
+	private InflateFileTypes(): void
+	{
+		let removeField: string[] = [];
+
+		for(let field in this._fileTypes)
+		{
+			if(this._fileTypes[field].indexOf('[') > -1)
+			{
+				// This content type field contains a comma separated list so
+				// we expand it out.
+				let exts: string[] = field.split(',');
+				let fileTypeParams: string[] = this.InflateTypeParams(this._fileTypes[field]);
+				let order = 0;
+				for(let i in exts)
+				{
+					this._fileTypes[exts[i].trim().toLowerCase()] = fileTypeParams[order];
+					
+					// If there are fewer content types than file extensions then
+					// the last content type will be applied to all the remaining
+					// extensions.
+					if(order+1 < fileTypeParams.length) order++;
+				}
+				
+				// Remember it so we can remove it.
+				// Do not delete here, it will crash the iterator loop.
+				removeField.push(field);
+			}
+		}
+		
+		// Delete the fields we expanded above
+		for(let i in removeField)
+		{
+			delete this._fileTypes[removeField[i]];			
+		}
+	}
+	
+	private InflateTypeParams(contentTypeString: string): string[]
+	{
+		let typeParamSet: string[] = [];
+		let parts: string[] = contentTypeString.split('#', 3);
+		let contentTypeList: string = parts[0].trim();
+		let vPath: string = parts[1].trim();
+		let binary: boolean = parts.length > 2 ? parts[2].trim() == 'bin' : false;
+		let startPos: number = contentTypeList.indexOf('[');
+				
+		// Square brackets are used to map file extensions
+		// to content types.
+		if(startPos > -1)
+		{
+			let prefixString: string = startPos == 0 ? "" : contentTypeList.substring(0, startPos).trim();
+			let endPos: number = contentTypeList.indexOf(']');
+			let contentTypes: string[] = contentTypeList.substring(startPos+1, endPos).split(',');
+			for(let i in contentTypes)
+			{
+				typeParamSet[i] = prefixString + contentTypes[i].trim() + "#" + vPath;
+				if(binary) typeParamSet[i] += "#bin";
+			}
+		}
+		else
+		{
+			// No square brackets.
+			// There is only one content type...probably means
+			// the file extensions all map onto the
+			// same common content type.
+			typeParamSet[0] = contentTypeList;
+		}
+		return typeParamSet;
+	}
 	
 	// Call this once to start the server.
 	Listen(): void
@@ -416,7 +506,7 @@ export class WebServer
 		{
 			// Extract the start of the content-type
 			let parts: string[] = content_type.split(';');
-			if(parts.length > 0) return parts[0].trim().toLowerCase();
+			return parts[0].trim().toLowerCase();
 		}
 
 		// Failed to retrieve the media type
@@ -680,18 +770,19 @@ export class WebServer
 			console.log("Need to read file: " + ext);
 			
 			// Is this a supported type?
-			if(WebServer._fileTypes.hasOwnProperty(ext))
+			if(this._fileTypes.hasOwnProperty(ext))
 			{
 				console.log("Type is supported " + ext);
 				// Extract virtual directory
 				let filename: string = fsBaseName(url);
-				let sep: string[] = WebServer._fileTypes[ext].split('#', 2);
+				let sep: string[] = this._fileTypes[ext].split('#', 3);
 				let contentType: string = sep[0];
 				let vPath: string = fsCreatePath(sep[1], filename);
+				let binary: boolean = sep.length > 2 ? sep[2].trim() == "bin" : false;
 				console.log("Content-Type: " + contentType
-					+ " virtualpath: " + vPath);
+					+ " virtualpath: " + vPath + " binary: " + binary);
 									
-				this.ReturnFile(vPath, contentType, response);
+				this.ReturnFile(vPath, contentType, response, binary);
 				return true;
 			}
 		}
@@ -752,7 +843,7 @@ export class WebServer
 	}
 	
 	// Return a file to the browser e.g. a JavaScript file
-	private ReturnFile(filename: string, contentType: string, response:ServerResponse): void
+	private ReturnFile(filename: string, contentType: string, response:ServerResponse, binary: boolean): void
 	{
 		console.log("Looking for file.... " + filename);
 
@@ -761,10 +852,12 @@ export class WebServer
 		
 		promise.then((data:Buffer):void => {
 			response.writeHead(200, {'Content-Type': contentType});
-			response.end((<Buffer>data).toString());
+			if(binary) response.end(data);
+			else response.end((<Buffer>data).toString());
 		}).catch((error: Error):void => {
 			console.log(error.message);	
-			response.end();
+			res.writeHead(400, {'Content-type':'text/html;charset=utf-8'})
+			response.end("Image does not exist");
 		});	
 	}
 	

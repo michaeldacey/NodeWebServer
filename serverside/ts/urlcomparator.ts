@@ -33,7 +33,7 @@ export class UrlComparator
 
 				rUrlPos += fieldName.length; 
 				urlPos += fieldValue.length;
-				if(fieldParts.length > 0)
+				if(fieldParts.length > 1)
 				{
 					args[fieldParts[0]] = this.CastFieldType(fieldParts[1], fieldValue);
 					if(Object.is(args[fieldParts[0]], NaN))
